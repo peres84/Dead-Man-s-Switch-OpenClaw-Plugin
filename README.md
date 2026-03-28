@@ -45,79 +45,51 @@ Dead Man's Switch turns OpenClaw into an autonomous infrastructure guardian. It 
 
 ## Architecture
 
-```
-                    ┌─────────────────────────────────┐
-                    │        OpenClaw Gateway          │
-                    │                                  │
-                    │   gateway:startup ──► watchdog   │
-                    │                         │        │
-                    │         ┌───────────────┘        │
-                    │         ▼                        │
-                    │   dms_status (fix log audit)     │
-                    │         │                        │
-                    │   Recurring pattern found?       │
-                    │         │                        │
-                    │    Yes ─┴─ Alert user on chat    │
-                    └─────────────────────────────────┘
+<p align="center">
+  <img src="docs/architecture.png" alt="Dead Man's Switch — How It Works" />
+</p>
 
-    User: "check my services"
-         │
-         ▼
-    SKILL: deadmans-switch
-         │
-         ├─► Step 1: tailscale funnel status
-         │       └─► (tailnet only)? → tailscale.md playbook
-         │               └─► sudo tailscale-funnel-start.sh
-         │
-         ├─► Step 2: curl each website
-         │       └─► Non-200? → nginx.md playbook
-         │               ├─► 502 → restart upstream process
-         │               ├─► 503 → nginx -t && nginx reload
-         │               └─► timeout → check tailscale first
-         │
-         ├─► Step 3: df -h /
-         │       └─► >85%? → disk.md playbook
-         │               └─► apt clean, journal vacuum, old logs
-         │
-         ├─► Step 4: Fix log audit
-         │       └─► Same service 2+ times in 24h? → create cron
-         │
-         └─► Step 5: Notify
-                 ├─► Text summary always
-                 └─► ElevenLabs voice (if API key configured)
-```
+Three entry points — a user command, a scheduled cron, or the gateway startup hook — all funnel into the same agent loop. Each step runs a prioritized check, branches on a decision diamond, and either executes a recovery script or falls through to the next check. Every outcome writes to the fix log. Voice alert fires last.
+
+> **Priority rule:** Tailscale is always checked first. If the tunnel is down, every external site returns 502 — not because nginx is broken, but because the tunnel is broken.
 
 ---
 
-## Prerequisites
+## How It Learns
 
-| Requirement | Details |
-|-------------|---------|
-| ![OS](https://img.shields.io/badge/OS-Ubuntu_22.04_%2F_24.04-E95420?style=flat-square&logo=ubuntu&logoColor=white) | Linux only |
-| ![Node](https://img.shields.io/badge/Node.js-≥18-339933?style=flat-square&logo=node.js&logoColor=white) | ESM runtime |
-| ![Bins](https://img.shields.io/badge/Requires-tailscale_·_nginx_·_curl_·_systemctl-6B7280?style=flat-square) | Must be in PATH |
-| ![Sudo](https://img.shields.io/badge/Sudo-NOPASSWD_rules_installed_by_install.sh-FF5C1A?style=flat-square) | For recovery scripts |
-| ![OpenClaw](https://img.shields.io/badge/OpenClaw-installed_%26_running-FF5C1A?style=flat-square) | Gateway must be active |
+<p align="center">
+  <img src="docs/emergent-monitoring.png" alt="The Self-Improving Guardian" />
+</p>
 
-**Optional but recommended:**
+The core innovation is **emergent monitoring** — the plugin configures itself from real failures rather than requiring upfront setup.
 
-| Integration | Purpose |
-|-------------|---------|
-| ![ElevenLabs](https://img.shields.io/badge/ElevenLabs-Voice_alerts_after_recovery-black?style=flat-square&logo=elevenlabs) | Speaks the recovery result aloud |
-| ![Tavily](https://img.shields.io/badge/Tavily-Searches_fixes_for_unknown_errors-0EA5E9?style=flat-square) | Self-improvement when no playbook matches |
+- **First failure:** fix silently, log the incident
+- **Second failure (same service, within 24h):** fix + suggest a cron job to monitor it permanently
+- **Unknown error:** search Tavily → attempt fix → if successful, append to the relevant playbook
+
+Playbooks are living documents. The agent rewrites them.
 
 ---
 
 ## Installation
 
-### Option A: From ClawHub (skill only)
+### Option 1 — ClawHub *(recommended, already published)*
+
+The plugin is live on ClawHub. One command to install:
 
 ```bash
-# Install the skill (playbooks + SKILL.md)
-clawhub install deadmans-switch --force
+clawhub install https://clawhub.ai/peres84/deadmans-switch
 ```
 
-### Option B: From source (full plugin)
+Then run the recovery script installer:
+
+```bash
+bash install.sh
+```
+
+> This copies scripts to `/usr/local/bin/openclaw-skills/`, writes sudoers rules, installs the skill to `~/.openclaw/skills/`, and creates the fix log.
+
+### Option 2 — From source (GitHub)
 
 ```bash
 # 1. Clone the repo
@@ -140,15 +112,11 @@ systemctl --user restart openclaw-gateway.service
 #    "check my services"
 ```
 
-> `install.sh` copies scripts to `/usr/local/bin/openclaw-skills/`, writes sudoers rules,
-> installs the skill to `~/.openclaw/skills/`, and creates the fix log.
-
 ---
 
 ## Configuration
 
-Add to your `~/.openclaw/openclaw.json`. Config keys must be nested inside a
-`config` sub-object under the plugin entry:
+Add to your `~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -180,32 +148,21 @@ Add to your `~/.openclaw/openclaw.json`. Config keys must be nested inside a
 
 ---
 
-## How It Works
+## Plugin Components
 
-### Triggered by you
+<p align="center">
+  <img src="docs/component-map.png" alt="Plugin Component Map" />
+</p>
 
-Ask your OpenClaw agent:
+The plugin registers two tools and one hook through `index.ts`:
 
-```
-"Check my services"
-"Run dead man's switch"
-"Is everything up?"
-```
+| Component | Type | Description |
+|-----------|------|-------------|
+| `dms_recover` | Tool | Execute a named recovery script · logs result automatically |
+| `dms_status` | Tool | Query the fix log — last 20 incidents, per-service counts, recurring patterns |
+| `gateway:startup` | Hook | Reads fix log on boot · alerts if any service has failed 2+ times in 24h |
 
-### Triggered automatically
-
-Once Dead Man's Switch detects a recurring failure (same service failing **2+ times in 24 hours**), it suggests — and you approve — a cron job that runs every 5 minutes. **Crons are never created preemptively** — only when a real pattern is detected.
-
-### The Fix Log
-
-Every incident is recorded to `~/.openclaw/dms-fix-log.jsonl`:
-
-```jsonl
-{"timestamp":"2026-03-28T00:15:44Z","service":"tailscale","issue":"funnel reverted to tailnet-only","fix":"ran tailscale-funnel-start.sh","result":"success","duration_ms":3200}
-{"timestamp":"2026-03-28T01:00:00Z","service":"nginx","issue":"502 on your-site.com","fix":"restarted upstream process","result":"success","duration_ms":1100}
-```
-
-The fix log is **append-only** — nothing is ever deleted. Use `dms_status` to query it.
+`SKILL.md` is the decision brain — it holds the diagnostic sequence, playbook routing logic, cron rules, and ElevenLabs/Tavily integration instructions. The agent reads it on every invocation.
 
 ---
 
@@ -221,42 +178,38 @@ The fix log is **append-only** — nothing is ever deleted. Use `dms_status` to 
 | [`disk.md`](skills/deadmans-switch/playbooks/disk.md) | Disk ≥ 85% used | `apt-get clean` · `journalctl --vacuum` · log rotation |
 | [`process.md`](skills/deadmans-switch/playbooks/process.md) | Any crashed systemd service | `systemctl restart <svc>` · `systemctl reset-failed` |
 
-### ⚠️ Priority order matters
+---
 
-**Tailscale is always checked first.** If the tunnel is down, every external website returns timeouts or 502s — not because nginx is broken, but because the tunnel is broken. Diagnosing nginx first wastes time and misdiagnoses the real cause.
+## The Tailscale Recovery Flow
+
+<p align="center">
+  <img src="docs/tailscale-recovery-flow.png" alt="Tailscale Funnel Recovery Flow" />
+</p>
+
+This plugin was built to solve a **real, recurring production bug**: Tailscale Funnel randomly drops from `(Funnel on)` to `(tailnet only)`, making the OpenClaw gateway unreachable from the public internet.
+
+**Root cause:** The systemd service started before `tailscaled` finished authenticating → `NoState` error. Fixed by moving retry logic to a dedicated script that polls `BackendState` up to 30 times before enabling the funnel.
+
+The recovery script (`tailscale-funnel-start.sh`) is installed to `/usr/local/bin/openclaw-skills/` with a NOPASSWD sudoers rule — so the agent can run it without interrupting you for a password.
 
 ---
 
-## Registered Tools
+## Prerequisites
 
-| Tool | Description |
-|------|-------------|
-| `dms_recover` | Execute a named recovery script · logs result automatically |
-| `dms_status` | Query the fix log — last 20 incidents, per-service counts, recurring patterns |
+| Requirement | Details |
+|-------------|---------|
+| ![OS](https://img.shields.io/badge/OS-Ubuntu_22.04_%2F_24.04-E95420?style=flat-square&logo=ubuntu&logoColor=white) | Linux only |
+| ![Node](https://img.shields.io/badge/Node.js-≥18-339933?style=flat-square&logo=node.js&logoColor=white) | ESM runtime |
+| ![Bins](https://img.shields.io/badge/Requires-tailscale_·_nginx_·_curl_·_systemctl-6B7280?style=flat-square) | Must be in PATH |
+| ![Sudo](https://img.shields.io/badge/Sudo-NOPASSWD_rules_installed_by_install.sh-FF5C1A?style=flat-square) | For recovery scripts |
+| ![OpenClaw](https://img.shields.io/badge/OpenClaw-installed_%26_running-FF5C1A?style=flat-square) | Gateway must be active |
 
----
+**Optional but recommended:**
 
-## Startup Watchdog Hook
-
-On `gateway:startup`, the watchdog reads the fix log and posts an alert in the gateway chat if any service has failed **2+ times in the last 24 hours** — along with a ready-to-run cron command. You always know what's been unstable before you start a new session.
-
----
-
-## The Tailscale Bug (Real Production Context)
-
-This plugin was built to solve a **real, recurring bug**: Tailscale Funnel randomly drops from `(Funnel on)` to `(tailnet only)`, making the OpenClaw gateway unreachable from the public internet.
-
-**Root cause:** The systemd service started before `tailscaled` finished authenticating → `NoState` error. Fixed by moving retry logic to a dedicated script.
-
-**What the agent does when it detects this:**
-
-```
-tailscale funnel status → "(tailnet only)" detected
-→ sudo /usr/local/bin/tailscale-funnel-start.sh
-→ Polls BackendState up to 30 times (3s apart)
-→ tailscale funnel --bg 18789
-→ Verify → Log → ElevenLabs voice alert
-```
+| Integration | Purpose |
+|-------------|---------|
+| ![ElevenLabs](https://img.shields.io/badge/ElevenLabs-Voice_alerts_after_recovery-black?style=flat-square&logo=elevenlabs) | Speaks the recovery result aloud |
+| ![Tavily](https://img.shields.io/badge/Tavily-Searches_fixes_for_unknown_errors-0EA5E9?style=flat-square) | Self-improvement when no playbook matches |
 
 ---
 
@@ -266,6 +219,19 @@ tailscale funnel status → "(tailnet only)" detected
 2. Include: detection commands · recovery steps · logging instructions · cron rule · voice alert text
 3. Add detection logic to `SKILL.md`'s diagnostic sequence
 4. Drop a script in `scripts/my-service-check.sh` and re-run `install.sh`
+
+---
+
+## The Fix Log
+
+Every incident is recorded to `~/.openclaw/dms-fix-log.jsonl`:
+
+```jsonl
+{"timestamp":"2026-03-28T00:15:44Z","service":"tailscale","issue":"funnel reverted to tailnet-only","fix":"ran tailscale-funnel-start.sh","result":"success","duration_ms":3200}
+{"timestamp":"2026-03-28T01:00:00Z","service":"nginx","issue":"502 on your-site.com","fix":"restarted upstream process","result":"success","duration_ms":1100}
+```
+
+The fix log is **append-only** — nothing is ever deleted. Use `dms_status` to query it.
 
 ---
 
