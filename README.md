@@ -46,7 +46,7 @@ Dead Man's Switch turns OpenClaw into an autonomous infrastructure guardian. It 
 ## Architecture
 
 <p align="center">
-  <img src="docs/architecture.png" alt="Dead Man's Switch — How It Works" />
+  <img src="images/architecture.png" alt="Dead Man's Switch — How It Works" />
 </p>
 
 Three entry points — a user command, a scheduled cron, or the gateway startup hook — all funnel into the same agent loop. Each step runs a prioritized check, branches on a decision diamond, and either executes a recovery script or falls through to the next check. Every outcome writes to the fix log. Voice alert fires last.
@@ -58,7 +58,7 @@ Three entry points — a user command, a scheduled cron, or the gateway startup 
 ## How It Learns
 
 <p align="center">
-  <img src="docs/emergent-monitoring.png" alt="The Self-Improving Guardian" />
+  <img src="images/emergent-monitoring.png" alt="The Self-Improving Guardian" />
 </p>
 
 The core innovation is **emergent monitoring** — the plugin configures itself from real failures rather than requiring upfront setup.
@@ -151,7 +151,7 @@ Add to your `~/.openclaw/openclaw.json`:
 ## Plugin Components
 
 <p align="center">
-  <img src="docs/component-map.png" alt="Plugin Component Map" />
+  <img src="images/component-map.png" alt="Plugin Component Map" />
 </p>
 
 The plugin registers two tools and one hook through `index.ts`:
@@ -183,7 +183,7 @@ The plugin registers two tools and one hook through `index.ts`:
 ## The Tailscale Recovery Flow
 
 <p align="center">
-  <img src="docs/tailscale-recovery-flow.png" alt="Tailscale Funnel Recovery Flow" />
+  <img src="images/tailscale-recovery-flow.png" alt="Tailscale Funnel Recovery Flow" />
 </p>
 
 This plugin was built to solve a **real, recurring production bug**: Tailscale Funnel randomly drops from `(Funnel on)` to `(tailnet only)`, making the OpenClaw gateway unreachable from the public internet.
