@@ -104,10 +104,10 @@ openclaw-deadmans-switch/
 }
 ```
 
-`package.json` must include:
+`package.json` must include (note: name MUST match the plugin manifest `id`):
 ```json
 {
-  "name": "openclaw-deadmans-switch",
+  "name": "deadmans-switch",
   "version": "0.1.0",
   "type": "module",
   "openclaw": {

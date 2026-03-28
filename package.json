@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-deadmans-switch",
+  "name": "deadmans-switch",
   "version": "0.1.0",
   "description": "Self-healing infrastructure guardian for OpenClaw",
   "type": "module",
@@ -9,15 +9,23 @@
     "typecheck": "tsc --noEmit"
   },
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.32.0"
+    "@sinclair/typebox": "^0.32.35"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
   },
-  "keywords": ["openclaw", "plugin", "monitoring", "infrastructure", "self-healing"],
+  "keywords": [
+    "openclaw",
+    "plugin",
+    "monitoring",
+    "infrastructure",
+    "self-healing"
+  ],
   "license": "MIT"
 }

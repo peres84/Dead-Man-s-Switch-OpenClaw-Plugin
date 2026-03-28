@@ -110,21 +110,33 @@ Dead Man's Switch turns OpenClaw into an autonomous infrastructure guardian. It 
 
 ## Installation
 
-```bash
-# 1. Clone the plugin
-git clone https://github.com/youruser/openclaw-deadmans-switch
-cd openclaw-deadmans-switch
+### Option A: From ClawHub (skill only)
 
-# 2. Install recovery scripts + sudoers rules (idempotent)
+```bash
+# Install the skill (playbooks + SKILL.md)
+clawhub install deadmans-switch --force
+```
+
+### Option B: From source (full plugin)
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/your-user/Dead-Man-s-Switch-OpenClaw-Plugin.git
+cd Dead-Man-s-Switch-OpenClaw-Plugin
+
+# 2. Install dependencies
+npm install
+
+# 3. Install recovery scripts + sudoers rules (requires sudo, idempotent)
 bash install.sh
 
-# 3. Register with OpenClaw
-openclaw plugins install openclaw-deadmans-switch
+# 4. Register with OpenClaw (--link for live updates via git pull)
+openclaw plugins install "$(pwd)" --link
 
-# 4. Restart the gateway
-openclaw gateway restart
+# 5. Restart the gateway
+systemctl --user restart openclaw-gateway.service
 
-# 5. Tell your agent:
+# 6. Tell your agent:
 #    "check my services"
 ```
 
@@ -135,20 +147,25 @@ openclaw gateway restart
 
 ## Configuration
 
-Add to your `openclaw.json`:
+Add to your `~/.openclaw/openclaw.json`. Config keys must be nested inside a
+`config` sub-object under the plugin entry:
 
 ```json
 {
   "plugins": {
-    "deadmans-switch": {
-      "elevenLabsApiKey": "sk-your-elevenlabs-key",
-      "tavilyApiKey":     "tvly-your-tavily-key",
-      "websites": [
-        "https://your-site.com",
-        "https://your-other-site.com"
-      ],
-      "services":       ["tailscale", "nginx"],
-      "notifyChannel":  "telegram"
+    "entries": {
+      "deadmans-switch": {
+        "enabled": true,
+        "config": {
+          "elevenLabsApiKey": "your-elevenlabs-key",
+          "tavilyApiKey": "tvly-your-tavily-key",
+          "websites": [
+            "https://your-site.com",
+            "https://your-other-site.com"
+          ],
+          "services": ["tailscale", "nginx"]
+        }
+      }
     }
   }
 }
@@ -160,7 +177,6 @@ Add to your `openclaw.json`:
 | `services` | — | Services to monitor (informational label) |
 | `elevenLabsApiKey` | — | Enables voice alerts via ElevenLabs MCP |
 | `tavilyApiKey` | — | Enables Tavily search for unknown error fixes |
-| `notifyChannel` | — | Channel for cron job announcements (e.g. `telegram`) |
 
 ---
 

@@ -7,11 +7,16 @@ this plugin. Read this before making any changes or running any install commands
 
 ## What This Repo Is
 
-`openclaw-deadmans-switch` is an OpenClaw plugin that turns OpenClaw into a
+`deadmans-switch` is an OpenClaw plugin that turns OpenClaw into a
 self-healing infrastructure guardian. It monitors Tailscale, nginx, disk, and
 arbitrary systemd services — autonomously diagnosing and fixing failures.
 
 **Runtime:** Node.js ESM · TypeScript · Linux only (Ubuntu 22.04 / 24.04)
+
+**Important:** The `package.json` `name` field must be `deadmans-switch` (not
+`openclaw-deadmans-switch`) — this must match the `id` in
+`openclaw.plugin.json`. A mismatch causes the gateway to reject the plugin with
+a "plugin id mismatch" error.
 
 ---
 
@@ -25,18 +30,22 @@ arbitrary systemd services — autonomously diagnosing and fixing failures.
 clawhub login
 ```
 
-### Step 2 — Publish the full plugin
+### Step 2 — Publish the skill
 
-Run from the repo root. The `openclaw.plugin.json` manifest tells ClawHub what
-to bundle.
+ClawHub publishes **skill folders** (directories containing a `SKILL.md`), not
+the entire repo root. You must pass the absolute path to the skill directory:
 
 ```bash
-clawhub publish . \
+clawhub publish "$(pwd)/skills/deadmans-switch" \
   --slug deadmans-switch \
   --name "Dead Man's Switch" \
   --version 0.1.0 \
   --tags latest,monitoring,infrastructure,self-healing,linux
 ```
+
+> **Note:** Publishing from `.` (the repo root) will fail with
+> `Error: SKILL.md required` because the root directory does not contain a
+> `SKILL.md`. Always point to the skill subdirectory.
 
 ### Step 3 — Verify it's live
 
@@ -49,7 +58,7 @@ clawhub search deadmans-switch
 Bump the version in `package.json` and `openclaw.plugin.json` first, then:
 
 ```bash
-clawhub publish . \
+clawhub publish "$(pwd)/skills/deadmans-switch" \
   --slug deadmans-switch \
   --name "Dead Man's Switch" \
   --version 0.1.1 \
@@ -70,63 +79,97 @@ clawhub publish . \
 clawhub login
 ```
 
-### Step 2 — Install the plugin
+### Step 2 — Install the skill from ClawHub
 
 ```bash
-openclaw plugins install deadmans-switch
+clawhub install deadmans-switch --force
 ```
 
-This pulls the full bundle (skills, scripts, hooks, index.ts) from ClawHub and
-registers the plugin with the local OpenClaw gateway.
+> **Note:** VirusTotal may flag this skill as "suspicious" due to sudo commands
+> and API key references in the playbooks. The `--force` flag is required for
+> non-interactive installs. Review the code before using `--force`.
 
-### Step 3 — Run the post-install script
+The skill is installed to `~/.openclaw/workspace/skills/deadmans-switch/`.
 
-The ClawHub install does not set up sudoers or copy scripts to
-`/usr/local/bin/openclaw-skills/`. Run this after:
+### Step 3 — Clone the repo for the full plugin (scripts + index.ts)
+
+ClawHub only publishes the **skill folder** (SKILL.md + playbooks). The full
+plugin (index.ts, install.sh, recovery scripts) must come from the git repo:
 
 ```bash
-# From wherever openclaw installed the plugin, usually:
-cd ~/.openclaw/plugins/deadmans-switch
+git clone https://github.com/your-user/Dead-Man-s-Switch-OpenClaw-Plugin.git
+cd Dead-Man-s-Switch-OpenClaw-Plugin
+npm install
+```
+
+### Step 4 — Run the installer (requires sudo)
+
+```bash
 bash install.sh
 ```
 
-If you cannot find the install path:
+This must be run in a terminal with sudo access (not from within Claude Code's
+sandbox). What it does:
+
+- Copies `scripts/*.sh` → `/usr/local/bin/openclaw-skills/` with `chmod +x`
+- Writes `/etc/sudoers.d/openclaw-skills` with NOPASSWD rules
+- Validates sudoers syntax with `visudo -c`
+- Copies skills to `~/.openclaw/skills/`
+- Creates `~/.openclaw/dms-fix-log.jsonl`
+
+### Step 5 — Register the plugin with OpenClaw
 
 ```bash
-find ~/.openclaw/plugins -name "install.sh" | head -5
+openclaw plugins install /path/to/Dead-Man-s-Switch-OpenClaw-Plugin --link
 ```
 
-### Step 4 — Configure
+> **Important:** Use `--link` to symlink the local directory instead of copying.
+> This way, `git pull` updates are reflected without re-installing.
 
-Edit `~/.openclaw/openclaw.json` (or wherever your OpenClaw config lives):
+### Step 6 — Configure
+
+Edit `~/.openclaw/openclaw.json`. Plugin config keys go inside a `config`
+sub-object under the plugin entry:
 
 ```json
 {
   "plugins": {
-    "deadmans-switch": {
-      "elevenLabsApiKey": "sk-your-key-here",
-      "tavilyApiKey": "tvly-your-key-here",
-      "websites": [
-        "https://your-site.com",
-        "https://your-other-site.com"
-      ],
-      "services": ["tailscale", "nginx"],
-      "notifyChannel": "telegram"
+    "entries": {
+      "deadmans-switch": {
+        "enabled": true,
+        "config": {
+          "elevenLabsApiKey": "your-elevenlabs-key",
+          "tavilyApiKey": "tvly-your-tavily-key",
+          "websites": [
+            "https://your-site.com",
+            "https://your-other-site.com"
+          ],
+          "services": ["tailscale", "nginx"]
+        }
+      }
     }
   }
 }
 ```
 
-### Step 5 — Restart the gateway
+> **Warning:** Do NOT put config keys (`elevenLabsApiKey`, etc.) directly under
+> the plugin entry — they must be inside the `config` object. Unrecognized
+> top-level keys cause the gateway to reject the config on startup.
+
+### Step 7 — Restart the gateway
 
 ```bash
+# If running as systemd service:
+systemctl --user restart openclaw-gateway.service
+
+# Or via CLI:
 openclaw gateway restart
 ```
 
-### Step 6 — Verify
+### Step 8 — Verify
 
 ```bash
-# Check plugin is loaded
+# Check plugin is loaded (should show "loaded" status)
 openclaw plugins list
 
 # Check fix log exists
@@ -138,8 +181,8 @@ ls /usr/local/bin/openclaw-skills/
 # Check sudoers
 sudo cat /etc/sudoers.d/openclaw-skills
 
-# Test the skill
-# Tell your agent: "check my services"
+# Test the skill — tell your agent:
+#   "check my services"
 ```
 
 ---
@@ -162,9 +205,13 @@ cd openclaw-deadmans-switch
 npm install
 ```
 
-### Step 3 — Run the installer
+> **Required dependency:** `@sinclair/typebox` — used by `index.ts` for tool
+> parameter schemas. This is installed automatically by `npm install`.
 
-This script is idempotent — safe to run multiple times.
+### Step 3 — Run the installer (requires sudo)
+
+This script is idempotent — safe to run multiple times. Must be run in a
+terminal with sudo access:
 
 ```bash
 bash install.sh
@@ -179,36 +226,36 @@ What `install.sh` does:
 
 ### Step 4 — Register with OpenClaw
 
+Link the local directory as a plugin:
+
 ```bash
-openclaw plugins install ./
+openclaw plugins install /path/to/Dead-Man-s-Switch-OpenClaw-Plugin --link
 ```
 
-Or if OpenClaw reads from a local path config, add to `openclaw.json`:
-
-```json
-{
-  "plugins": {
-    "deadmans-switch": {
-      "localPath": "/path/to/openclaw-deadmans-switch"
-    }
-  }
-}
-```
+This registers the plugin and adds the path to `plugins.load.paths` in
+`openclaw.json`.
 
 ### Step 5 — Configure
 
+Add to `~/.openclaw/openclaw.json` under `plugins.entries`. Config keys must go
+inside a `config` sub-object:
+
 ```json
 {
   "plugins": {
-    "deadmans-switch": {
-      "elevenLabsApiKey": "sk-your-key-here",
-      "tavilyApiKey": "tvly-your-key-here",
-      "websites": [
-        "https://your-site.com",
-        "https://your-other-site.com"
-      ],
-      "services": ["tailscale", "nginx"],
-      "notifyChannel": "telegram"
+    "entries": {
+      "deadmans-switch": {
+        "enabled": true,
+        "config": {
+          "elevenLabsApiKey": "your-elevenlabs-key",
+          "tavilyApiKey": "tvly-your-tavily-key",
+          "websites": [
+            "https://your-site.com",
+            "https://your-other-site.com"
+          ],
+          "services": ["tailscale", "nginx"]
+        }
+      }
     }
   }
 }
@@ -217,13 +264,13 @@ Or if OpenClaw reads from a local path config, add to `openclaw.json`:
 ### Step 6 — Restart the gateway
 
 ```bash
-openclaw gateway restart
+systemctl --user restart openclaw-gateway.service
 ```
 
 ### Step 7 — Verify
 
 ```bash
-# Plugin loaded
+# Plugin loaded (look for "deadmans-switch" with "loaded" status)
 openclaw plugins list
 
 # Scripts in place
@@ -301,6 +348,52 @@ openclaw gateway restart
 4. **Always run `nginx -t` before `nginx -s reload`** — never reload a broken config
 5. **Scripts must stay in `/usr/local/bin/openclaw-skills/`** — sudoers rules point there
 6. **Playbooks are living documents** — append new fixes after learning via Tavily
+
+---
+
+## Troubleshooting
+
+### "SKILL.md required" when publishing to ClawHub
+
+ClawHub publishes **skill folders**, not entire repos. Use the absolute path to
+the skill directory:
+
+```bash
+clawhub publish "$(pwd)/skills/deadmans-switch" --slug deadmans-switch ...
+```
+
+### "plugin id mismatch" on gateway startup
+
+The `name` in `package.json` must exactly match the `id` in
+`openclaw.plugin.json`. Both must be `deadmans-switch`.
+
+### "Unrecognized keys" in config
+
+Plugin config keys (`elevenLabsApiKey`, `tavilyApiKey`, etc.) must be nested
+inside a `config` sub-object under `plugins.entries.deadmans-switch`, not at the
+top level. See the Configuration section above.
+
+### "Cannot find module '@sinclair/typebox'"
+
+Run `npm install` in the plugin directory. This dependency is required by
+`index.ts` for tool parameter schemas.
+
+### "sudo: a terminal is required" during install.sh
+
+`install.sh` requires an interactive terminal with sudo access. Run it directly
+in your terminal session, not from within a sandboxed agent environment.
+
+### VirusTotal flags the skill as suspicious
+
+This is expected — the skill contains sudo commands, API key references, and
+shell script execution patterns. Use `--force` with `clawhub install` after
+reviewing the code.
+
+### Gateway shows "plugin not found" after install
+
+Ensure you used `openclaw plugins install <path> --link` (not `clawhub install`
+alone). ClawHub only installs the skill (SKILL.md + playbooks). The full plugin
+registration requires `openclaw plugins install` pointed at the repo directory.
 
 ---
 
