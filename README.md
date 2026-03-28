@@ -35,6 +35,12 @@
   <em>PagerDuty costs $500/month. This is a <code>SKILL.md</code>.</em>
 </p>
 
+<p align="center">
+  <a href="https://deadmans-guard-bot.lovable.app/">
+    <img src="https://img.shields.io/badge/🌐_Live_Demo-deadmans--guard--bot.lovable.app-FF5C1A?style=for-the-badge&labelColor=0A0C10" alt="Live Demo" />
+  </a>
+</p>
+
 ---
 
 ## What It Does
