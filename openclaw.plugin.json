@@ -1,0 +1,36 @@
+{
+  "id": "deadmans-switch",
+  "name": "Dead Man's Switch",
+  "description": "Self-healing infrastructure guardian for OpenClaw",
+  "version": "0.1.0",
+  "icon": "./images/logo-transparent.png",
+  "skills": ["./skills"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "elevenLabsApiKey": { "type": "string" },
+      "tavilyApiKey": { "type": "string" },
+      "services": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "websites": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "notifyChannel": { "type": "string" }
+    }
+  },
+  "uiHints": {
+    "elevenLabsApiKey": {
+      "label": "ElevenLabs API Key",
+      "sensitive": true,
+      "placeholder": "sk-..."
+    },
+    "tavilyApiKey": {
+      "label": "Tavily API Key",
+      "sensitive": true
+    }
+  }
+}
